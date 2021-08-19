@@ -30,7 +30,7 @@ def cli_params(app_base_path):
     else:
         print('Invalid local logs path')
 
-    parser = argparse.ArgumentParser(description='DAISY SNMP Poller',
+    parser = argparse.ArgumentParser(description='SNMP Poller',
                                      formatter_class=RawTextHelpFormatter)
 
     mandatory = parser.add_argument_group('mandatory arguments')
