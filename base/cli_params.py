@@ -48,8 +48,8 @@ def cli_params(app_base_path):
                            dest='daisy_hosts',
                            action='store',
                            metavar='<hostname/IPv4 list>',
-                           help='load the DAISY\'s hosts '
-                                'from the selected file (CSV format)\n')
+                           help='load the hosts from the '
+                                'selected file (CSV format)\n')
 
     mandatory.add_argument('-o',
                            required=True,
