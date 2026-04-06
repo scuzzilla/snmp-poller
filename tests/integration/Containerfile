@@ -1,0 +1,10 @@
+FROM docker.io/library/alpine:3.20
+
+RUN apk add --no-cache net-snmp net-snmp-tools
+
+COPY snmpd.conf /etc/snmp/snmpd.conf
+
+EXPOSE 161/udp
+
+# Run snmpd in foreground, no fork, logging to stderr.
+CMD ["snmpd", "-f", "-Lo", "-C", "-c", "/etc/snmp/snmpd.conf"]

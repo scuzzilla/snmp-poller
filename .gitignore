@@ -1,14 +1,19 @@
 *.swp
-*.cfg
-*__pycache__*
-*__init__*
-*pip-selfcheck*
-*fail*
-etc/
-share
-logs/*.log
-archive/
-bin/
-lib/
-lib64
-pyvenv.cfg
+__pycache__/
+*.pyc
+
+# virtual environment
+.venv/
+
+# build artifacts
+*.egg-info/
+dist/
+build/
+
+# logs
+*.log
+
+# misc
+.pytest_cache/
+.coverage
+.dccache

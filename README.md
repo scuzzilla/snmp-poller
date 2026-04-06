@@ -1,18 +1,115 @@
-# snmp-poller brief intro
+# snmp-poller
 
-The **snmp-poller(TM)** application can be used to handle concurrent SNMPv3 queries. 
+Concurrent SNMPv3 poller built on [pysnmp](https://pysnmp.readthedocs.io) and [asyncio](https://docs.python.org/3/library/asyncio.html).
 
-The application is developed in [Python](https://www.python.org) (version >= 3.x) and it's based on [pysnmp's API](https://pysnmp.readthedocs.io/en/latest/index.html)
-the concurrency is implemented using the [asyncio](https://docs.python.org/3.7/library/asyncio.html) framework. 
+Polls multiple hosts in parallel, with device groups that define which OIDs to query per host class.
 
-### For more details you can refer to the official [wiki page](https://www.alfanetti.org/data-pipes.html)
----
-# Quick Install
+## Install
+
 ```
-0. git clone git@github.com:scuzzilla/snmp-poller.git
-1. cd snmp-poller
-2. python3 -m venv .
-3. source bin/activate
-4. pip install -r requirements.txt
-5. ./snmp-poller -h
+pip install .
 ```
+
+For development (includes pytest):
+
+```
+pip install -e ".[dev]"
+```
+
+## Usage
+
+```
+snmp-poller -s <snmp_auth.yml> -l <hosts.csv> -o <oids.yml>
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `-s` | yes | SNMPv3 credentials (YAML) |
+| `-l` | yes | Host list with group assignments (CSV) |
+| `-o` | yes | OID definitions per group (YAML) |
+| `-f` | no | JSON output file (default: `/var/log/snmp_poll/snmp_poll.log`) |
+| `--log-dir` | no | Application log directory (default: `/var/log/snmp_poll`) |
+
+## Configuration
+
+See `examples/` for sample files.
+
+**SNMPv3 credentials** (`-s`):
+
+```yaml
+userName: myuser
+authKey: my_auth_key
+privKey: my_priv_key
+localAddress: 192.168.1.100
+```
+
+**Host list** (`-l`):
+
+```csv
+192.168.1.1,linux_servers
+192.168.1.2,linux_servers
+10.0.0.1,network_switches
+```
+
+**OID definitions** (`-o`) — each group defines the OIDs to poll and their output types:
+
+```yaml
+linux_servers:
+  - name: ssCpuIdle
+    oid: .1.3.6.1.4.1.2021.11.11.0
+    type: float
+  - name: memAvailReal
+    oid: .1.3.6.1.4.1.2021.4.6.0
+    type: int
+
+network_switches:
+  - name: ifInOctets
+    oid: .1.3.6.1.2.1.2.2.1.10.1
+    type: int
+  - name: sysUpTime
+    oid: .1.3.6.1.2.1.1.3.0
+    type: str
+```
+
+Any number of groups and any number of OIDs per group are supported.
+
+## Output
+
+Each polled host produces a JSON record sent to syslog and written to the output file:
+
+```json
+{
+  "device": "192.168.1.1",
+  "snmp_data_grp": "linux_servers",
+  "poller_instance": "snmp_poll_nix",
+  "ssCpuIdle": 95.0,
+  "memAvailReal": 2048000
+}
+```
+
+Field names and types come from the OID config — nothing is hardcoded.
+
+## Tests
+
+```
+pytest -m "not integration"
+```
+
+### Integration tests
+
+Integration tests poll real SNMP agents running in containers. Requires podman.
+
+```
+# Build the test container (once)
+podman build -t snmpd-test -f tests/integration/Containerfile tests/integration/
+
+# Run integration tests
+pytest tests/integration/ -m integration
+
+# Run everything
+pytest
+```
+
+## License
+
+MIT

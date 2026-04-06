@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snmp-poller"
+version = "0.1.0"
+description = "Concurrent SNMPv3 polling application using asyncio"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    {name = "Salvatore Cuzzilla", email = "salvatore@cuzzilla.org"},
+]
+
+dependencies = [
+    "pyaml>=20.4.0",
+    "pysnmp>=4.4.12,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "coverage",
+]
+integration = [
+    "pytest",
+    "pytest-asyncio",
+    "pysnmp>=7",
+]
+
+[project.scripts]
+snmp-poller = "snmp_poller.poller:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: requires podman and snmpd-test container image",
+]
