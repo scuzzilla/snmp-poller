@@ -128,3 +128,41 @@ class TestCliParams:
 
         with pytest.raises(SystemExit):
             cli_params()
+
+    def test_workers_default_is_one(
+        self, tmp_dir, monkeypatch,
+    ):
+        args = make_valid_args(tmp_dir)
+        monkeypatch.setattr('sys.argv', ['snmp-poller'] + args)
+
+        result = cli_params()
+
+        assert result['workers'] == 1
+
+    def test_workers_custom_value(
+        self, tmp_dir, monkeypatch,
+    ):
+        args = make_valid_args(tmp_dir) + ['--workers', '4']
+        monkeypatch.setattr('sys.argv', ['snmp-poller'] + args)
+
+        result = cli_params()
+
+        assert result['workers'] == 4
+
+    def test_workers_zero_exits(
+        self, tmp_dir, monkeypatch,
+    ):
+        args = make_valid_args(tmp_dir) + ['--workers', '0']
+        monkeypatch.setattr('sys.argv', ['snmp-poller'] + args)
+
+        with pytest.raises(SystemExit):
+            cli_params()
+
+    def test_workers_negative_exits(
+        self, tmp_dir, monkeypatch,
+    ):
+        args = make_valid_args(tmp_dir) + ['--workers', '-1']
+        monkeypatch.setattr('sys.argv', ['snmp-poller'] + args)
+
+        with pytest.raises(SystemExit):
+            cli_params()

@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-04-06
+
+### Added
+- **Multiprocessing support** — `--workers N` distributes hosts across N worker processes, each with its own asyncio event loop and SNMP engine pool. Enables polling 10,000+ hosts in parallel.
+- `poll_host()` coroutine — returns result dict instead of writing to file, used by worker processes
+- `_partition_hosts()` — splits host records into roughly-equal chunks for worker distribution
+- `_worker_process()` — child process entry point with independent engine pool and event loop
+- `_run_multiprocess()` — supervisor that spawns workers, collects results via `multiprocessing.Queue`, writes output centrally (no file contention)
+- Scalability benchmark suite (`tests/integration/test_scalability.py`) — 50 containers, compares engine pool strategies, measures concurrency speedup
+- Unit tests for `_partition_hosts` (5 tests) and `poll_host` (4 tests)
+- CLI tests for `--workers` flag (4 tests)
+
+### Changed
+- `--engine-pool-size` now applies per worker process (was global)
+- `_build_result()` extracted from `get_async` to share result-building logic between single-process and multiprocessing paths
+- `main()` branches on `--workers`: 1 = existing single-process path (unchanged), >1 = multiprocessing
+
 ## [0.1.0] - 2026-04-06
 
 ### Added

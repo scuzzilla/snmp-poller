@@ -57,7 +57,8 @@ def _install_pysnmp_mocks():
 _install_pysnmp_mocks()
 
 from snmp_poller.poller import (  # noqa: E402
-    build_snmp_request, get_async,
+    build_snmp_request, get_async, poll_host,
+    _partition_hosts,
 )
 import snmp_poller.poller as poller_module  # noqa: E402
 
@@ -573,3 +574,131 @@ class TestAsyncScalability:
                 assert 'ifOutOctets' in r
                 assert 'sysUpTime' in r
                 assert 'ssCpuIdle' not in r
+
+
+# --- Partition tests ---
+
+class TestPartitionHosts:
+
+    def test_even_split(self):
+        records = {f'h{i}': 'g' for i in range(12)}
+        chunks = _partition_hosts(records, 4)
+        assert len(chunks) == 4
+        assert all(len(c) == 3 for c in chunks)
+        all_hosts = set()
+        for c in chunks:
+            all_hosts.update(c.keys())
+        assert all_hosts == set(records.keys())
+
+    def test_uneven_split(self):
+        records = {f'h{i}': 'g' for i in range(10)}
+        chunks = _partition_hosts(records, 3)
+        assert len(chunks) == 3
+        sizes = sorted(len(c) for c in chunks)
+        assert sizes == [3, 3, 4]
+
+    def test_more_workers_than_hosts(self):
+        records = {'h0': 'a', 'h1': 'b', 'h2': 'c'}
+        chunks = _partition_hosts(records, 10)
+        assert len(chunks) == 10
+        non_empty = [c for c in chunks if c]
+        assert len(non_empty) == 3
+
+    def test_single_worker(self):
+        records = {f'h{i}': 'g' for i in range(5)}
+        chunks = _partition_hosts(records, 1)
+        assert len(chunks) == 1
+        assert chunks[0] == records
+
+    def test_preserves_host_group_mapping(self):
+        records = {'h0': 'linux', 'h1': 'switches'}
+        chunks = _partition_hosts(records, 2)
+        combined = {}
+        for c in chunks:
+            combined.update(c)
+        assert combined == records
+
+
+# --- poll_host tests ---
+
+class TestPollHost:
+
+    @pytest.mark.asyncio
+    async def test_returns_dict_on_success(self):
+        snmp_init = make_mock_snmp_init()
+        logger = make_logger()
+        varbinds = make_varbinds([95.0, 1024])
+        fake = AsyncMock(
+            return_value=(None, None, None, varbinds),
+        )
+
+        with patch.object(
+            poller_module, 'build_snmp_request',
+            return_value=(fake(), OIDS_LINUX),
+        ):
+            result = await poll_host(
+                '10.0.0.1', 'linux_servers',
+                SAMPLE_OIDS, snmp_init,
+                SAMPLE_SNMP_PARAMS, logger,
+            )
+
+        assert result is not None
+        assert result['device'] == '10.0.0.1'
+        assert result['snmp_data_grp'] == 'linux_servers'
+        assert result['ssCpuIdle'] == 95.0
+        assert result['memAvailReal'] == 1024
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_unknown_group(self):
+        snmp_init = make_mock_snmp_init()
+        logger = make_logger()
+
+        result = await poll_host(
+            '10.0.0.1', 'unknown',
+            SAMPLE_OIDS, snmp_init,
+            SAMPLE_SNMP_PARAMS, logger,
+        )
+
+        assert result is None
+        logger.critical.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_error_indication(self):
+        snmp_init = make_mock_snmp_init()
+        logger = make_logger()
+        fake = AsyncMock(
+            return_value=('timeout', None, None, []),
+        )
+
+        with patch.object(
+            poller_module, 'build_snmp_request',
+            return_value=(fake(), OIDS_LINUX),
+        ):
+            result = await poll_host(
+                '10.0.0.1', 'linux_servers',
+                SAMPLE_OIDS, snmp_init,
+                SAMPLE_SNMP_PARAMS, logger,
+            )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_exception(self):
+        snmp_init = make_mock_snmp_init()
+        logger = make_logger()
+
+        async def exploding():
+            raise ConnectionError('refused')
+
+        with patch.object(
+            poller_module, 'build_snmp_request',
+            return_value=(exploding(), OIDS_LINUX),
+        ):
+            result = await poll_host(
+                '10.0.0.1', 'linux_servers',
+                SAMPLE_OIDS, snmp_init,
+                SAMPLE_SNMP_PARAMS, logger,
+            )
+
+        assert result is None
+        logger.critical.assert_called_once()

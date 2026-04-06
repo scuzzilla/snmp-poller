@@ -29,6 +29,8 @@ snmp-poller -s <snmp_auth.yml> -l <hosts.csv> -o <oids.yml>
 | `-o` | yes | OID definitions per group (YAML) |
 | `-f` | no | JSON output file (default: `/var/log/snmp_poll/snmp_poll.log`) |
 | `--log-dir` | no | Application log directory (default: `/var/log/snmp_poll`) |
+| `--engine-pool-size` | no | SNMP engines per worker (default: 5) |
+| `--workers` | no | Worker processes for parallel polling (default: 1) |
 
 ## Configuration
 
@@ -72,6 +74,21 @@ network_switches:
 ```
 
 Any number of groups and any number of OIDs per group are supported.
+
+## Scaling to 10,000+ hosts
+
+By default, snmp-poller runs in a single process. For large-scale
+polling, use `--workers` to distribute hosts across multiple processes,
+each with its own asyncio event loop and engine pool:
+
+```
+# 10 processes × 100 engines = handles ~10,000 hosts
+snmp-poller -s auth.yml -l hosts.csv -o oids.yml \
+    --workers 10 --engine-pool-size 100
+```
+
+Each worker polls its hosts concurrently. Results are collected
+centrally by the supervisor process — no file contention.
 
 ## Output
 

@@ -66,6 +66,22 @@ def cli_params():
                         help='directory for application logs '
                              f'(default: {DEFAULT_LOG_DIR})\n')
 
+    parser.add_argument('--engine-pool-size',
+                        dest='engine_pool_size',
+                        type=int,
+                        default=5,
+                        metavar='<N>',
+                        help='number of SNMP engines per worker '
+                             '(default: 5)\n')
+
+    parser.add_argument('--workers',
+                        dest='workers',
+                        type=int,
+                        default=1,
+                        metavar='<N>',
+                        help='number of worker processes '
+                             '(default: 1, single-process)\n')
+
     args = parser.parse_args()
 
     # Validate each input file: must exist, non-empty, correct extension.
@@ -86,10 +102,19 @@ def cli_params():
     # Create log directory if it doesn't exist yet.
     os.makedirs(args.log_dir, exist_ok=True)
 
+    if args.engine_pool_size < 1:
+        parser.error('--engine-pool-size must be >= 1')
+    if args.workers < 1:
+        parser.error('--workers must be >= 1')
+
     return {
-        'hosts_file':   args.hosts_file,
-        'snmp_params':  args.snmp_params,
-        'oids':         args.oids,
-        'output_file':  args.output_file,
-        'logging_path': path.join(args.log_dir, 'snmp_poll_app.log'),
+        'hosts_file':       args.hosts_file,
+        'snmp_params':      args.snmp_params,
+        'oids':             args.oids,
+        'output_file':      args.output_file,
+        'engine_pool_size': args.engine_pool_size,
+        'workers':          args.workers,
+        'logging_path':     path.join(
+            args.log_dir, 'snmp_poll_app.log',
+        ),
     }
