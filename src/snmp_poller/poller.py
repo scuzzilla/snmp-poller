@@ -3,6 +3,7 @@
 import asyncio
 import json
 import multiprocessing
+import signal
 import syslog
 
 from pysnmp.hlapi.v3arch.asyncio import get_cmd
@@ -225,10 +226,11 @@ def _worker_process(host_chunk, snmp_params, oids,
 
 def _run_multiprocess(records, snmp_params, oids,
                       engine_pool_size, output_file,
-                      logging_path, num_workers):
+                      logging_path, num_workers, logger):
     '''
     Distribute hosts across worker processes, collect results
     centrally, and write output from the supervisor process.
+    Handles SIGINT/SIGTERM to terminate workers cleanly.
     '''
     chunks = _partition_hosts(records, num_workers)
     result_queue = multiprocessing.Queue()
@@ -249,25 +251,56 @@ def _run_multiprocess(records, snmp_params, oids,
         processes.append(p)
 
     active_workers = len(processes)
+    shutting_down = False
+
+    def _shutdown(signum, frame):
+        nonlocal shutting_down
+        if shutting_down:
+            return
+        shutting_down = True
+        sig_name = signal.Signals(signum).name
+        logger.info(f'Received {sig_name}, stopping workers...')
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
 
     # Drain results and write centrally — single file handle,
     # no contention between processes.
     syslog.openlog(facility=syslog.LOG_LOCAL1)
     workers_done = 0
-    with open(output_file, 'a') as f:
-        while workers_done < active_workers:
-            item = result_queue.get()
-            if item is None:
-                workers_done += 1
-                continue
-            output = json.dumps(item, indent=2)
-            syslog.syslog(output)
-            f.write(output + '\n')
+    try:
+        with open(output_file, 'a') as f:
+            while workers_done < active_workers:
+                try:
+                    item = result_queue.get(timeout=1)
+                except Exception:
+                    # Check if workers died or we're shutting down.
+                    if shutting_down:
+                        break
+                    alive = [p for p in processes if p.is_alive()]
+                    if not alive:
+                        break
+                    continue
+                if item is None:
+                    workers_done += 1
+                    continue
+                output = json.dumps(item, indent=2)
+                syslog.syslog(output)
+                f.write(output + '\n')
+    finally:
+        # Ensure all workers are stopped and joined.
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+        for p in processes:
+            p.join(timeout=5)
+        syslog.closelog()
 
-    for p in processes:
-        p.join()
-
-    syslog.closelog()
+    if shutting_down:
+        logger.info('Shutdown complete.')
 
 
 def main():
@@ -284,7 +317,7 @@ def main():
     output_file = paths['output_file']
 
     if num_workers <= 1:
-        # Single-process mode — existing behavior.
+        # Single-process mode.
         engine_pool = [
             PySnmpInit(
                 snmp_params['userName'],
@@ -302,14 +335,21 @@ def main():
                 engine_pool[i % pool_size],
                 snmp_params, output_file, logger,
             )
-            for i, (host, group) in enumerate(records.items())
+            for i, (host, group) in enumerate(
+                records.items()
+            )
         ]
-        asyncio.run(asyncio.gather(*tasks))
 
-        syslog.closelog()
+        try:
+            asyncio.run(asyncio.gather(*tasks))
+        except KeyboardInterrupt:
+            logger.info('Interrupted, shutting down.')
+        finally:
+            syslog.closelog()
     else:
         # Multiprocessing mode — distribute across workers.
         _run_multiprocess(
             records, snmp_params, oids, pool_size,
-            output_file, paths['logging_path'], num_workers,
+            output_file, paths['logging_path'],
+            num_workers, logger,
         )

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-04-06
+
+### Added
+- **GitHub Actions CI** — runs flake8 lint and unit tests on every push/PR to main, across Python 3.12 and 3.13
+- **Graceful shutdown** — handles SIGINT (Ctrl+C) and SIGTERM in both single-process and multiprocessing modes:
+  - Single-process: `KeyboardInterrupt` caught, syslog closed cleanly
+  - Multiprocessing: signal handler terminates all worker processes, drains remaining results, joins workers with timeout
+
 ## [0.3.0] - 2026-04-06
 
 ### Changed
