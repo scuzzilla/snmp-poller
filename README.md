@@ -1,7 +1,7 @@
 # snmp-poller
 
 [![CI](https://github.com/scuzzilla/snmp-poller/actions/workflows/ci.yml/badge.svg)](https://github.com/scuzzilla/snmp-poller/actions/workflows/ci.yml)
-![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)
+[![codecov](https://codecov.io/gh/scuzzilla/snmp-poller/graph/badge.svg)](https://codecov.io/gh/scuzzilla/snmp-poller)
 
 Concurrent SNMPv3 poller built on [pysnmp](https://pysnmp.readthedocs.io) and [asyncio](https://docs.python.org/3/library/asyncio.html).
 
