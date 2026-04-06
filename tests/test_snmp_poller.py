@@ -21,35 +21,32 @@ import pytest
 
 
 # --- Mock pysnmp before importing snmp_poller ---
-# pysnmp 4.x depends on asyncore (removed in Python 3.12+),
-# so we build a minimal mock module tree.
+# We mock the pysnmp v7 module tree so tests run without
+# a real pysnmp installation.
 
 def _install_pysnmp_mocks():
     mock_modules = {}
     for name in [
-        'pysnmp', 'pysnmp.hlapi',
-        'pysnmp.hlapi.asyncio',
-        'pysnmp.hlapi.auth',
-        'pysnmp.smi', 'pysnmp.smi.rfc1902',
+        'pysnmp',
+        'pysnmp.hlapi',
+        'pysnmp.hlapi.v3arch',
+        'pysnmp.hlapi.v3arch.asyncio',
+        'pysnmp.hlapi.v3arch.asyncio.transport',
     ]:
         mock_modules[name] = types.ModuleType(name)
 
-    hlapi_asyncio = mock_modules['pysnmp.hlapi.asyncio']
-    hlapi_asyncio.getCmd = MagicMock(name='getCmd')
-    hlapi_asyncio.UdpTransportTarget = MagicMock(
+    v3 = mock_modules['pysnmp.hlapi.v3arch.asyncio']
+    v3.get_cmd = AsyncMock(name='get_cmd')
+    v3.UdpTransportTarget = MagicMock(
         name='UdpTransportTarget',
     )
-
-    hlapi = mock_modules['pysnmp.hlapi']
-    hlapi.SnmpEngine = MagicMock(name='SnmpEngine')
-    hlapi.UsmUserData = MagicMock(name='UsmUserData')
-    hlapi.ContextData = MagicMock(name='ContextData')
-    hlapi.ObjectIdentity = MagicMock(name='ObjectIdentity')
-    hlapi.ObjectType = MagicMock(name='ObjectType')
-
-    auth = mock_modules['pysnmp.hlapi.auth']
-    auth.usmHMACMD5AuthProtocol = 'md5-mock'
-    auth.usmAesCfb128Protocol = 'aes-mock'
+    v3.SnmpEngine = MagicMock(name='SnmpEngine')
+    v3.UsmUserData = MagicMock(name='UsmUserData')
+    v3.ContextData = MagicMock(name='ContextData')
+    v3.ObjectIdentity = MagicMock(name='ObjectIdentity')
+    v3.ObjectType = MagicMock(name='ObjectType')
+    v3.usmHMACMD5AuthProtocol = 'md5-mock'
+    v3.usmAesCfb128Protocol = 'aes-mock'
 
     sys.modules.update(mock_modules)
 
@@ -116,7 +113,7 @@ def make_mock_snmp_init():
     snmp_init.init_object_type = MagicMock(
         side_effect=lambda oid: f'OT({oid})',
     )
-    snmp_init.init_udp_transport_target = MagicMock(
+    snmp_init.init_udp_transport_target = AsyncMock(
         return_value='transport',
     )
     snmp_init.snmp_engine = 'engine'
@@ -148,47 +145,61 @@ async def poll(host, group, snmp_init, logger):
 
 class TestBuildSnmpRequest:
 
-    def test_known_group_returns_response_and_oid_defs(self):
+    @pytest.mark.asyncio
+    async def test_known_group_returns_response_and_oid_defs(
+        self,
+    ):
         snmp_init = make_mock_snmp_init()
+        fake_response = (None, None, None, [])
         with patch.object(
-            poller_module, 'getCmd', return_value='fake',
+            poller_module, 'get_cmd',
+            new_callable=AsyncMock,
+            return_value=fake_response,
         ):
-            response, grp_oids = build_snmp_request(
+            result, grp_oids = await build_snmp_request(
                 '10.0.0.1', 'linux_servers',
                 SAMPLE_OIDS, snmp_init, SAMPLE_SNMP_PARAMS,
             )
-        assert response == 'fake'
+        assert result == fake_response
         assert grp_oids is OIDS_LINUX
         assert snmp_init.init_object_type.call_count == 2
 
-    def test_group_with_three_oids(self):
+    @pytest.mark.asyncio
+    async def test_group_with_three_oids(self):
         snmp_init = make_mock_snmp_init()
+        fake_response = (None, None, None, [])
         with patch.object(
-            poller_module, 'getCmd', return_value='fake',
+            poller_module, 'get_cmd',
+            new_callable=AsyncMock,
+            return_value=fake_response,
         ):
-            response, grp_oids = build_snmp_request(
+            result, grp_oids = await build_snmp_request(
                 '10.0.0.2', 'network_switches',
                 SAMPLE_OIDS, snmp_init, SAMPLE_SNMP_PARAMS,
             )
-        assert response == 'fake'
+        assert result == fake_response
         assert grp_oids is OIDS_SWITCHES
         assert snmp_init.init_object_type.call_count == 3
 
-    def test_unknown_group_returns_none(self):
+    @pytest.mark.asyncio
+    async def test_unknown_group_returns_none(self):
         snmp_init = make_mock_snmp_init()
-        response, grp_oids = build_snmp_request(
+        result, grp_oids = await build_snmp_request(
             '10.0.0.3', 'unknown_group',
             SAMPLE_OIDS, snmp_init, SAMPLE_SNMP_PARAMS,
         )
-        assert response is None
+        assert result is None
         assert grp_oids is None
 
-    def test_passes_all_oids_to_getCmd(self):
+    @pytest.mark.asyncio
+    async def test_passes_all_oids_to_get_cmd(self):
         snmp_init = make_mock_snmp_init()
         with patch.object(
-            poller_module, 'getCmd', return_value='fake',
+            poller_module, 'get_cmd',
+            new_callable=AsyncMock,
+            return_value=(None, None, None, []),
         ) as mock_cmd:
-            build_snmp_request(
+            await build_snmp_request(
                 '10.0.0.1', 'network_switches',
                 SAMPLE_OIDS, snmp_init, SAMPLE_SNMP_PARAMS,
             )
@@ -206,13 +217,12 @@ class TestGetAsync:
         logger = make_logger()
         snmp_init = make_mock_snmp_init()
         varbinds = make_varbinds([92.5, 2048000])
-        fake = AsyncMock(
-            return_value=(None, None, None, varbinds),
-        )
-
         with patch.object(
             poller_module, 'build_snmp_request',
-            return_value=(fake(), OIDS_LINUX),
+            new_callable=AsyncMock,
+            return_value=(
+                (None, None, None, varbinds), OIDS_LINUX,
+            ),
         ), patch.object(
             poller_module, 'syslog',
         ), patch('builtins.open', mock_open()):
@@ -228,13 +238,13 @@ class TestGetAsync:
         logger = make_logger()
         snmp_init = make_mock_snmp_init()
         varbinds = make_varbinds([123456, 654321, '1:02:33:44'])
-        fake = AsyncMock(
-            return_value=(None, None, None, varbinds),
-        )
 
         with patch.object(
             poller_module, 'build_snmp_request',
-            return_value=(fake(), OIDS_SWITCHES),
+            new_callable=AsyncMock,
+            return_value=(
+                (None, None, None, varbinds), OIDS_SWITCHES,
+            ),
         ), patch.object(
             poller_module, 'syslog',
         ), patch('builtins.open', mock_open()):
@@ -261,13 +271,12 @@ class TestGetAsync:
     async def test_error_indication_logs_critical(self):
         logger = make_logger()
         snmp_init = make_mock_snmp_init()
-        fake = AsyncMock(
-            return_value=('timeout', None, None, []),
-        )
-
         with patch.object(
             poller_module, 'build_snmp_request',
-            return_value=(fake(), OIDS_LINUX),
+            new_callable=AsyncMock,
+            return_value=(
+                ('timeout', None, None, []), OIDS_LINUX,
+            ),
         ):
             await poll(
                 '10.0.0.1', 'linux_servers',
@@ -283,13 +292,14 @@ class TestGetAsync:
         snmp_init = make_mock_snmp_init()
         mock_status = MagicMock()
         mock_status.prettyPrint.return_value = 'noSuchName'
-        fake = AsyncMock(
-            return_value=(None, mock_status, 1, [('oid', 'val')]),
-        )
 
         with patch.object(
             poller_module, 'build_snmp_request',
-            return_value=(fake(), OIDS_LINUX),
+            new_callable=AsyncMock,
+            return_value=(
+                (None, mock_status, 1, [('oid', 'val')]),
+                OIDS_LINUX,
+            ),
         ):
             await poll(
                 '10.0.0.1', 'linux_servers',
@@ -305,12 +315,10 @@ class TestGetAsync:
         logger = make_logger()
         snmp_init = make_mock_snmp_init()
 
-        async def exploding_response():
-            raise ConnectionError('connection refused')
-
         with patch.object(
             poller_module, 'build_snmp_request',
-            return_value=(exploding_response(), OIDS_LINUX),
+            new_callable=AsyncMock,
+            side_effect=ConnectionError('connection refused'),
         ):
             await poll(
                 '10.0.0.1', 'linux_servers',
@@ -327,9 +335,6 @@ class TestGetAsync:
         logger = make_logger()
         snmp_init = make_mock_snmp_init()
         varbinds = make_varbinds([88.0, 512000])
-        fake = AsyncMock(
-            return_value=(None, None, None, varbinds),
-        )
         written_data = []
 
         m = mock_open()
@@ -339,7 +344,10 @@ class TestGetAsync:
 
         with patch.object(
             poller_module, 'build_snmp_request',
-            return_value=(fake(), OIDS_LINUX),
+            new_callable=AsyncMock,
+            return_value=(
+                (None, None, None, varbinds), OIDS_LINUX,
+            ),
         ), patch.object(
             poller_module, 'syslog',
         ), patch('builtins.open', m):
@@ -360,9 +368,6 @@ class TestGetAsync:
         logger = make_logger()
         snmp_init = make_mock_snmp_init()
         varbinds = make_varbinds([100, 200, '0:05:00:00'])
-        fake = AsyncMock(
-            return_value=(None, None, None, varbinds),
-        )
         written_data = []
 
         m = mock_open()
@@ -372,7 +377,10 @@ class TestGetAsync:
 
         with patch.object(
             poller_module, 'build_snmp_request',
-            return_value=(fake(), OIDS_SWITCHES),
+            new_callable=AsyncMock,
+            return_value=(
+                (None, None, None, varbinds), OIDS_SWITCHES,
+            ),
         ), patch.object(
             poller_module, 'syslog',
         ), patch('builtins.open', m):
@@ -396,9 +404,6 @@ class TestGetAsync:
         logger = make_logger()
         snmp_init = make_mock_snmp_init()
         varbinds = make_varbinds(['92', '1024'])
-        fake = AsyncMock(
-            return_value=(None, None, None, varbinds),
-        )
         written_data = []
 
         m = mock_open()
@@ -408,7 +413,10 @@ class TestGetAsync:
 
         with patch.object(
             poller_module, 'build_snmp_request',
-            return_value=(fake(), OIDS_LINUX),
+            new_callable=AsyncMock,
+            return_value=(
+                (None, None, None, varbinds), OIDS_LINUX,
+            ),
         ), patch.object(
             poller_module, 'syslog',
         ), patch('builtins.open', m):
@@ -442,12 +450,10 @@ class TestAsyncScalability:
         snmp_init = make_mock_snmp_init()
         logger = make_logger()
 
-        async def slow_response():
+        async def mock_build(host, group, oids, si, sp):
             await asyncio.sleep(simulated_latency)
-            return (None, None, None, make_varbinds([95.0, 1024]))
-
-        def mock_build(host, group, oids, si, sp):
-            return slow_response(), OIDS_LINUX
+            vb = make_varbinds([95.0, 1024])
+            return (None, None, None, vb), OIDS_LINUX
 
         with patch.object(
             poller_module, 'build_snmp_request',
@@ -487,16 +493,16 @@ class TestAsyncScalability:
 
         call_count = {'ok': 0}
 
-        async def tracked_response(oid_defs):
-            values = [0] * len(oid_defs)
-            call_count['ok'] += 1
-            return (None, None, None, make_varbinds(values))
-
-        def mock_build(host, group, oids, si, sp):
+        async def mock_build(host, group, oids, si, sp):
             grp_oids = oids.get(group)
             if grp_oids is None:
                 return None, None
-            return tracked_response(grp_oids), grp_oids
+            values = [0] * len(grp_oids)
+            call_count['ok'] += 1
+            return (
+                (None, None, None, make_varbinds(values)),
+                grp_oids,
+            )
 
         with patch.object(
             poller_module, 'build_snmp_request',
@@ -529,13 +535,13 @@ class TestAsyncScalability:
         logger = make_logger()
         written_data = []
 
-        async def fake_response(oid_defs):
-            values = list(range(len(oid_defs)))
-            return (None, None, None, make_varbinds(values))
-
-        def mock_build(host, group, oids, si, sp):
+        async def mock_build(host, group, oids, si, sp):
             grp_oids = oids.get(group)
-            return fake_response(grp_oids), grp_oids
+            values = list(range(len(grp_oids)))
+            return (
+                (None, None, None, make_varbinds(values)),
+                grp_oids,
+            )
 
         m = mock_open()
         m().write = MagicMock(
@@ -628,13 +634,13 @@ class TestPollHost:
         snmp_init = make_mock_snmp_init()
         logger = make_logger()
         varbinds = make_varbinds([95.0, 1024])
-        fake = AsyncMock(
-            return_value=(None, None, None, varbinds),
-        )
 
         with patch.object(
             poller_module, 'build_snmp_request',
-            return_value=(fake(), OIDS_LINUX),
+            new_callable=AsyncMock,
+            return_value=(
+                (None, None, None, varbinds), OIDS_LINUX,
+            ),
         ):
             result = await poll_host(
                 '10.0.0.1', 'linux_servers',
@@ -666,13 +672,13 @@ class TestPollHost:
     async def test_returns_none_on_error_indication(self):
         snmp_init = make_mock_snmp_init()
         logger = make_logger()
-        fake = AsyncMock(
-            return_value=('timeout', None, None, []),
-        )
 
         with patch.object(
             poller_module, 'build_snmp_request',
-            return_value=(fake(), OIDS_LINUX),
+            new_callable=AsyncMock,
+            return_value=(
+                ('timeout', None, None, []), OIDS_LINUX,
+            ),
         ):
             result = await poll_host(
                 '10.0.0.1', 'linux_servers',
@@ -687,12 +693,10 @@ class TestPollHost:
         snmp_init = make_mock_snmp_init()
         logger = make_logger()
 
-        async def exploding():
-            raise ConnectionError('refused')
-
         with patch.object(
             poller_module, 'build_snmp_request',
-            return_value=(exploding(), OIDS_LINUX),
+            new_callable=AsyncMock,
+            side_effect=ConnectionError('refused'),
         ):
             result = await poll_host(
                 '10.0.0.1', 'linux_servers',

@@ -5,7 +5,7 @@ import json
 import multiprocessing
 import syslog
 
-from pysnmp.hlapi.asyncio import getCmd
+from pysnmp.hlapi.v3arch.asyncio import get_cmd
 
 from snmp_poller.cli import cli_params
 from snmp_poller.data_loader import yml_loader, csv_loader
@@ -21,10 +21,11 @@ TYPE_CASTERS = {
 }
 
 
-def build_snmp_request(host, group, oids, snmp_init, snmp_params):
+async def build_snmp_request(host, group, oids, snmp_init,
+                             snmp_params):
     '''
-    Build OIDs and SNMP getCmd response for a given host and group.
-    Returns (getCmd coroutine, group_oid_defs) or (None, None) if
+    Build OIDs and issue an SNMP GET for a given host and group.
+    Returns (response_tuple, group_oid_defs) or (None, None) if
     the group is not defined in config.
     '''
     grp_oids = oids.get(group)
@@ -36,10 +37,10 @@ def build_snmp_request(host, group, oids, snmp_init, snmp_params):
         for entry in grp_oids
     ]
 
-    transport = snmp_init.init_udp_transport_target(
+    transport = await snmp_init.init_udp_transport_target(
         host, snmp_params['localAddress'],
     )
-    response = getCmd(
+    response = await get_cmd(
         snmp_init.snmp_engine,
         snmp_init.usm_user_data,
         transport,
@@ -83,10 +84,10 @@ async def get_async(host, group, oids, snmp_init, snmp_params,
     See: https://pysnmp.readthedocs.io/en/latest/index.html
     '''
     try:
-        response, grp_oids = build_snmp_request(
+        result_tuple, grp_oids = await build_snmp_request(
             host, group, oids, snmp_init, snmp_params,
         )
-        if response is None:
+        if result_tuple is None:
             logger.critical(
                 f'{host}: unhandled device group "{group}", '
                 f'wrong/missing info from CSV'
@@ -97,7 +98,7 @@ async def get_async(host, group, oids, snmp_init, snmp_params,
         # errorIndex, varBinds). errorIndication is a transport-level
         # error; errorStatus is an SNMP protocol-level error.
         err_indication, err_status, err_index, var_binds = (
-            await response
+            result_tuple
         )
 
         if err_indication:
@@ -132,10 +133,10 @@ async def poll_host(host, group, oids, snmp_init, snmp_params,
     written centrally by the supervisor process.
     '''
     try:
-        response, grp_oids = build_snmp_request(
+        result_tuple, grp_oids = await build_snmp_request(
             host, group, oids, snmp_init, snmp_params,
         )
-        if response is None:
+        if result_tuple is None:
             logger.critical(
                 f'{host}: unhandled device group "{group}", '
                 f'wrong/missing info from CSV'
@@ -143,7 +144,7 @@ async def poll_host(host, group, oids, snmp_init, snmp_params,
             return None
 
         err_indication, err_status, err_index, var_binds = (
-            await response
+            result_tuple
         )
 
         if err_indication:

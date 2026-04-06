@@ -15,7 +15,7 @@ authors = [
 
 dependencies = [
     "pyaml>=20.4.0",
-    "pysnmp>=4.4.12,<5",
+    "pysnmp>=7",
 ]
 
 [project.optional-dependencies]
@@ -23,11 +23,6 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "coverage",
-]
-integration = [
-    "pytest",
-    "pytest-asyncio",
-    "pysnmp>=7",
 ]
 
 [project.scripts]

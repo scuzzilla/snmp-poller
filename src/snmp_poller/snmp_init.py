@@ -1,15 +1,16 @@
 '''pysnmp initialization — session components and per-request factories.'''
 
 
-from pysnmp.hlapi import SnmpEngine
-from pysnmp.hlapi import UsmUserData
-from pysnmp.hlapi.asyncio import UdpTransportTarget
-from pysnmp.hlapi import ContextData
-from pysnmp.hlapi import ObjectIdentity
-from pysnmp.hlapi import ObjectType
-from pysnmp.hlapi.auth import (usmHMACMD5AuthProtocol,
-                               usmAesCfb128Protocol,
-                               )
+from pysnmp.hlapi.v3arch.asyncio import (
+    SnmpEngine,
+    UsmUserData,
+    UdpTransportTarget,
+    ContextData,
+    ObjectIdentity,
+    ObjectType,
+    usmHMACMD5AuthProtocol,
+    usmAesCfb128Protocol,
+)
 
 
 class PySnmpInit:
@@ -27,21 +28,22 @@ class PySnmpInit:
         self.snmp_engine = SnmpEngine()
 
         self.usm_user_data = UsmUserData(
-            userName=user_name,
-            authKey=auth_key,
-            privKey=priv_key,
+            user_name, auth_key, priv_key,
             authProtocol=usmHMACMD5AuthProtocol,
             privProtocol=usmAesCfb128Protocol,
         )
 
         self.context_data = ContextData()
 
-    def init_udp_transport_target(self, host, localaddr, port=161,
-                                  timeout=3, retries=3):
+    async def init_udp_transport_target(
+        self, host, localaddr, port=161, timeout=3, retries=3,
+    ):
         '''Create a new UDP transport target for a specific host.'''
-        return UdpTransportTarget(
-            (host, port), timeout=timeout, retries=retries
-        ).setLocalAddress((localaddr, 0))
+        transport = await UdpTransportTarget.create(
+            (host, port), timeout=timeout, retries=retries,
+        )
+        transport.set_local_address((localaddr, 0))
+        return transport
 
     def init_object_type(self, oid):
         '''Create a new ObjectType for a specific OID.'''
