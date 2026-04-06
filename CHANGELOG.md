@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-04-06
+
+### Changed
+- **Migrated from pysnmp v4 to v7** — removes the `asyncore` dependency that blocked Python 3.12+. The app now runs on Python 3.12, 3.13, and 3.14.
+- All pysnmp imports updated to `pysnmp.hlapi.v3arch.asyncio`
+- `getCmd` renamed to `get_cmd` (pysnmp v7 snake_case convention)
+- `UdpTransportTarget` now uses async `.create()` factory + `set_local_address()`
+- `build_snmp_request()` is now async (transport creation requires await in v7)
+- `UsmUserData` uses positional arguments (v7 convention)
+- Removed separate `integration` optional dependency group — main `pysnmp>=7` covers both app and integration tests
+
+### Performance
+- Single-host baseline: 1.3ms → 1.0ms (23% faster)
+- Engine pool of 5 at 50 hosts: 498ms → 477ms (4% faster)
+- Engine pool of 10 at 50 hosts: 978ms → 782ms (20% faster)
+- Engine pool of 25 at 50 hosts: 2,103ms → 1,584ms (25% faster)
+
 ## [0.2.0] - 2026-04-06
 
 ### Added
