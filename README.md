@@ -1,5 +1,8 @@
 # snmp-poller
 
+[![CI](https://github.com/scuzzilla/snmp-poller/actions/workflows/ci.yml/badge.svg)](https://github.com/scuzzilla/snmp-poller/actions/workflows/ci.yml)
+![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)
+
 Concurrent SNMPv3 poller built on [pysnmp](https://pysnmp.readthedocs.io) and [asyncio](https://docs.python.org/3/library/asyncio.html).
 
 Polls multiple hosts in parallel, with device groups that define which OIDs to query per host class.
